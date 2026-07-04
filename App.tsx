@@ -4,6 +4,7 @@ import { QueueContextProvider} from './src/context/QueueContext';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AuthenticateScreen } from './src/screens/Authenticate';
+import { PremiumRequiredScreen } from './src/screens/PremiumRequired';
 import { WelcomeScreen } from './src/screens/Welcome';
 import { PlaylistScreen } from './src/screens/Playlist';
 import { NowPlayingBar } from './src/components/NowPlayingBar';
@@ -41,6 +42,7 @@ export default function App() {
                 </NavigationContainer>
                 <NowPlayingBar />
                 <AuthenticateScreen />
+                <PremiumRequiredScreen />
             </Providers>
         </SafeAreaView>
     )

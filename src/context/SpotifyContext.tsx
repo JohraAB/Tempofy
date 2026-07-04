@@ -69,6 +69,11 @@ interface AppContext {
     playerState?: PlayerState;
     api: SpotifyWebApi;
     user: SpotifyApi.UserObjectPrivate;
+    // Spotify's App Remote only permits on-demand playback for Premium accounts
+    // ("A Spotify Premium account is required to play a single track uri"). Free
+    // users authenticate fine but Player.play(uri) silently no-ops. Derived from
+    // the profile's `product` field. undefined = not yet known (profile pending).
+    isPremium?: boolean;
 }
 
 const noopControls: PlaybackControls = {
@@ -118,6 +123,7 @@ export const AppContextProvider = (props: Props) => {
     const [remoteConnected, setRemoteConnected] = useState(false);
     const [playerState, setPlayerState] = useState<PlayerState>();
     const [user, setUser] = useState<SpotifyApi.UserObjectPrivate>({} as SpotifyApi.UserObjectPrivate);
+    const [isPremium, setIsPremium] = useState<boolean | undefined>(undefined);
     const tokenRef = useRef<string | null>(null);
     const userPressedConnectedRef = useRef(false);
 
@@ -180,7 +186,18 @@ export const AppContextProvider = (props: Props) => {
     useEffect(() => {
         if (!token) return;
         spotifyWebApi.getMe().then(
-            (data) => setUser(data.body as SpotifyApi.UserObjectPrivate),
+            (data) => {
+                const profile = data.body as SpotifyApi.UserObjectPrivate;
+                setUser(profile);
+                // `product` is "premium" | "free" | "open". Only Premium can drive
+                // App Remote playback, so a non-premium value is the definitive
+                // cause of "pressed play but nothing happens".
+                const premium = profile.product === "premium";
+                setIsPremium(premium);
+                if (!premium) {
+                    console.log("Spotify account is not Premium — playback control unavailable", profile.product);
+                }
+            },
             (err) => reportError(err.message, "generic"),
         );
     }, [token]);
@@ -283,6 +300,7 @@ export const AppContextProvider = (props: Props) => {
         await AsyncStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
         setToken(null);
         setUser({} as SpotifyApi.UserObjectPrivate);
+        setIsPremium(undefined);
         clearError();
     };
 
@@ -436,7 +454,8 @@ export const AppContextProvider = (props: Props) => {
                 reconnect,
                 disconnect,
                 api: spotifyWebApi,
-                user
+                user,
+                isPremium
             }}
         >
             {props.children}
