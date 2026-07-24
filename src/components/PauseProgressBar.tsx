@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useRef } from "react";
-import { Animated, StyleSheet, View, ViewStyle } from "react-native";
+import { Animated, Easing, StyleSheet, View, ViewStyle } from "react-native";
 import { NowPlayingContext } from "../context/NowPlayingContext";
 import { SettingsContext } from "../context/SettingsContext";
 
@@ -44,10 +44,15 @@ export const PauseProgressBar: React.FC<{
             const animation = Animated.timing(progress, {
                 toValue: 0,
                 duration: remaining,
-                // Width can't animate on the native driver, and the end time only
-                // changes on phase start/pause/resume (not every tick), so this JS
-                // animation runs the whole phase without re-rendering consumers.
-                useNativeDriver: false,
+                // Linear so it drains at a constant rate over the whole phase; the
+                // default ease-in-out would crawl at the ends.
+                easing: Easing.linear,
+                // scaleX runs on the native driver (UI thread), so the drain stays
+                // smooth over a long play phase even while the 1s timeLeft tick
+                // re-renders every NowPlayingContext consumer. The end time only
+                // changes on phase start/pause/resume, so the animation isn't
+                // restarted per tick.
+                useNativeDriver: true,
             });
             animation.start();
             return () => animation.stop();
@@ -59,14 +64,14 @@ export const PauseProgressBar: React.FC<{
         return null;
     }
 
-    const width = progress.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['0%', '100%'],
-    });
-
     return (
         <View style={[styles.track, { height, backgroundColor: trackColor }, style]}>
-            <Animated.View style={[styles.fill, { width, backgroundColor: pausing ? pauseColor : playColor }]} />
+            <Animated.View
+                style={[
+                    styles.fill,
+                    { backgroundColor: pausing ? pauseColor : playColor, transform: [{ scaleX: progress }] },
+                ]}
+            />
         </View>
     );
 };
@@ -78,7 +83,11 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
     },
     fill: {
+        width: '100%',
         height: '100%',
         borderRadius: 999,
+        // Scale from the left edge so scaleX drains right-to-left instead of
+        // shrinking toward the centre.
+        transformOrigin: 'left',
     },
 });
