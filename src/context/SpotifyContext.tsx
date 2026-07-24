@@ -408,8 +408,22 @@ export const AppContextProvider = (props: Props) => {
             await Player.pause();
         },
         resume: async () => {
-            await ensureRemoteConnected();
-            await Player.resume();
+            try {
+                await ensureRemoteConnected();
+                await Player.resume();
+            } catch (err: any) {
+                // Spotify was suspended while paused — a long Pause-mode rest
+                // gap can outlast the App Remote connection, and plain
+                // connect() can't revive a suspended Spotify (CONNECTION_FAILED).
+                // Wake it and resume in one step; authorizeAndPlay with no uri
+                // resumes the current track (see SDK README).
+                const accessToken = tokenRef.current;
+                if (authorizeAndPlay && accessToken && isConnectionError(err)) {
+                    await authorizeAndPlay(accessToken);
+                    return;
+                }
+                throw err;
+            }
         },
         skipToNext: async () => {
             await ensureRemoteConnected();
