@@ -8,6 +8,7 @@ import { QueueContext } from "../context/QueueContext";
 import { NowPlayingContext } from "../context/NowPlayingContext";
 import { TempoContext } from "../context/TempoContext";
 import { Background } from "./Background";
+import { PauseProgressBar } from "./PauseProgressBar";
 
 export const FullScreen: React.FC<{ playerState: PlayerState, visible: boolean, onRequestClose: () => void }> = ({
     playerState,
@@ -128,6 +129,7 @@ export const FullScreen: React.FC<{ playerState: PlayerState, visible: boolean, 
                             </View>
                         </TouchableOpacity>
                     </View>
+                    <PauseProgressBar height={8} style={styles.pauseBar} />
                 </SafeAreaView>
             </Background>
         </Modal>
@@ -146,7 +148,12 @@ const styles = StyleSheet.create({
         height: Dimensions.get('window').width
     },
     coverText: {
-        
+
+    },
+    pauseBar: {
+        marginHorizontal: 30,
+        marginBottom: 20,
+        width: undefined,
     },
     controlButtons: {
         flex: 1,

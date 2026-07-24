@@ -4,6 +4,7 @@ import { AppContext } from "../context/SpotifyContext";
 import { Icon, makeStyles, Text } from '@rneui/themed';
 import { FullScreen } from "./FullScreen";
 import { NowPlayingContext } from "../context/NowPlayingContext";
+import { PauseProgressBar } from "./PauseProgressBar";
 import { getAnalytics, logEvent } from '@react-native-firebase/analytics';
 
 export const NowPlayingBar = () => {
@@ -53,6 +54,12 @@ export const NowPlayingBar = () => {
                     <TouchableOpacity style={styles.controlIcon} onPress={() => togglePlayPause()}>
                         <Icon raised name={(isAutoPausing || !playerState.isPaused) ? 'pause' : 'play-arrow'}/>
                     </TouchableOpacity>
+                    <PauseProgressBar
+                        height={3}
+                        fillColor={'#ffffff'}
+                        trackColor={'rgba(0,0,0,0.2)'}
+                        style={styles.pauseBar}
+                    />
                 </TouchableOpacity>
                 <FullScreen 
                     playerState={playerState}
@@ -81,6 +88,14 @@ const useStyles = makeStyles((theme) => ({
         padding: 10
     },
     controlIcon: {
+    },
+    pauseBar: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        width: undefined,
+        borderRadius: 0,
     },
 }));
   
