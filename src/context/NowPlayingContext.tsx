@@ -37,6 +37,15 @@ interface NowPlayingContext {
     // remaining fraction even when mounted partway through the gap (e.g. opening
     // fullscreen mid-pause), instead of restarting from full.
     pauseEndsAt: number | null;
+    // Wall-clock time (ms) the active playback countdown fires (pauses/skips), or
+    // null whenever it isn't ticking (paused, off, or not started). The progress
+    // bar reads this the same way it reads pauseEndsAt, so it can drain over the
+    // play phase too and pick up the true remaining fraction when mounted midway.
+    countdownEndsAt: number | null;
+    // The full duration (ms) the current countdown started from — autoSkipTime, or
+    // a shorter value when capped against the track's outro. Paired with
+    // countdownEndsAt to compute the played fraction.
+    countdownTotal: number | null;
     // Cancel the scheduled auto-resume and keep playback in its current state.
     cancelAutoResume: () => void;
 }
@@ -48,6 +57,8 @@ const defaultValue: NowPlayingContext = {
     timeLeft: null,
     isAutoPausing: false,
     pauseEndsAt: null,
+    countdownEndsAt: null,
+    countdownTotal: null,
     cancelAutoResume: () => undefined
 }
 
@@ -65,6 +76,17 @@ export const NowPlayingContextProvider = (props: Props) => {
     const timerInterval = 1000;
     const [updateInterval, setUpdateInterval] = useState<number | null>(null);
     const endTimeRef = useRef<number | null>(null);
+    // State mirror of endTimeRef, exposed for the progress bar. The ref stays the
+    // source of truth for the synchronous reads in the playerState effect; this
+    // setter writes both so a re-render is triggered whenever the countdown's end
+    // time changes (starts, pauses to null, resumes).
+    const [countdownEndsAt, setCountdownEndsAt] = useState<number | null>(null);
+    const setEndTime = (value: number | null) => {
+        endTimeRef.current = value;
+        setCountdownEndsAt(value);
+    };
+    // The duration the current countdown started from, for the played fraction.
+    const [countdownTotal, setCountdownTotal] = useState<number | null>(null);
     const pausedRemainingRef = useRef<number | null>(null);
     // Mirrors playerState.isPaused so async callbacks (e.g. resetCountDown at
     // the tail of a pause/skip) can read the *current* pause state instead of
@@ -148,12 +170,12 @@ export const NowPlayingContextProvider = (props: Props) => {
         if(playerState.isPaused) {
             if(endTimeRef.current !== null) {
                 pausedRemainingRef.current = Math.max(0, endTimeRef.current - Date.now());
-                endTimeRef.current = null;
+                setEndTime(null);
             }
             setUpdateInterval(null);
         } else {
             if(pausedRemainingRef.current !== null) {
-                endTimeRef.current = Date.now() + pausedRemainingRef.current;
+                setEndTime(Date.now() + pausedRemainingRef.current);
                 pausedRemainingRef.current = null;
             }
             setUpdateInterval(timerInterval);
@@ -185,7 +207,7 @@ export const NowPlayingContextProvider = (props: Props) => {
         if(endTimeRef.current === null) return;
         const remaining = endTimeRef.current - Date.now();
         if(remaining <= 1000) {
-            endTimeRef.current = null;
+            setEndTime(null);
             setTimeLeft(null);
         } else {
             setTimeLeft(remaining);
@@ -231,6 +253,7 @@ export const NowPlayingContextProvider = (props: Props) => {
                 countdownCappedRef.current = true;
             }
         }
+        setCountdownTotal(total);
         if(isPausedRef.current) {
             // Playback is paused (manually, or by Pause mode). Don't start
             // ticking against wall-clock time — park the fresh countdown in the
@@ -238,12 +261,12 @@ export const NowPlayingContextProvider = (props: Props) => {
             // playback actually resumes. Otherwise the timer would count down
             // while the music is stopped.
             pausedRemainingRef.current = total;
-            endTimeRef.current = null;
+            setEndTime(null);
             setTimeLeft(total);
             setUpdateInterval(null);
             return;
         }
-        endTimeRef.current = Date.now() + total;
+        setEndTime(Date.now() + total);
         pausedRemainingRef.current = null;
         setTimeLeft(total);
         setUpdateInterval(timerInterval);
@@ -304,7 +327,7 @@ export const NowPlayingContextProvider = (props: Props) => {
     // (null would trip onCountDownFinished); the caller's resetCountDown arms a
     // fresh positive countdown right after.
     const cancelPendingAutoAdvance = () => {
-        endTimeRef.current = null;
+        setEndTime(null);
         pausedRemainingRef.current = null;
         setUpdateInterval(null);
         if(isAutoPausingRef.current || pauseHoldResolveRef.current) {
@@ -458,7 +481,7 @@ export const NowPlayingContextProvider = (props: Props) => {
             // pause playback so the last track doesn't keep playing on.
             console.log('queue empty, stopping playback');
             setUpdateInterval(null);
-            endTimeRef.current = null;
+            setEndTime(null);
             pausedRemainingRef.current = null;
             setWaiting(false);
             try {
@@ -616,6 +639,8 @@ export const NowPlayingContextProvider = (props: Props) => {
                 timeLeft,
                 isAutoPausing,
                 pauseEndsAt,
+                countdownEndsAt,
+                countdownTotal,
                 cancelAutoResume
             }}
         >

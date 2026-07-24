@@ -74,7 +74,8 @@ export const NowPlayingBar = () => {
                 </TouchableOpacity>
                 <PauseProgressBar
                     height={3}
-                    fillColor={'#ffffff'}
+                    playColor={'#ffffff'}
+                    pauseColor={'#ffcf70'}
                     trackColor={'rgba(0,0,0,0.2)'}
                     style={styles.pauseBar}
                 />
