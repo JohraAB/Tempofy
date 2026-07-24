@@ -12,7 +12,7 @@ export const NowPlayingBar = () => {
     const styles = useStyles();
 
     const [modalVisible, setModalVisible] = useState(false);
-    const secondsLeft = timeLeft ? Math.floor((timeLeft / 1000) % 60) : null;
+    const secondsLeft = timeLeft ? Math.floor(timeLeft / 1000) : null;
 
     useEffect(() => {
         if(modalVisible) {

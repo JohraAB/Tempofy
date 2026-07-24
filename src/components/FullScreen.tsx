@@ -22,7 +22,7 @@ export const FullScreen: React.FC<{ playerState: PlayerState, visible: boolean, 
     const { selectedTempo, setSelectedTempo } = useContext(TempoContext);
     const [userChangedTempo, setUserChangedTempo] = useState(false);
 
-    const secondsLeft = timeLeft ? Math.floor((timeLeft / 1000) % 60) : null;
+    const secondsLeft = timeLeft ? Math.floor(timeLeft / 1000) : null;
 
     useEffect(() => {
         if(userChangedTempo) {
