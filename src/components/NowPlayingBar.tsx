@@ -6,6 +6,7 @@ import { FullScreen } from "./FullScreen";
 import { NowPlayingContext } from "../context/NowPlayingContext";
 import { PauseProgressBar } from "./PauseProgressBar";
 import { getAnalytics, logEvent } from '@react-native-firebase/analytics';
+import { PlayerState } from "../helpers/types";
 
 export const NowPlayingBar = () => {
     const { isConnected, playerState, remote } = useContext(AppContext);
@@ -13,7 +14,17 @@ export const NowPlayingBar = () => {
     const styles = useStyles();
 
     const [modalVisible, setModalVisible] = useState(false);
+    // Retain the most recent player state so a transient Spotify App Remote drop
+    // (which clears playerState to undefined) doesn't unmount and close the
+    // fullscreen. The modal stays open and recovers when the connection returns.
+    const [lastPlayerState, setLastPlayerState] = useState<PlayerState | undefined>(undefined);
     const secondsLeft = timeLeft ? Math.floor(timeLeft / 1000) : null;
+
+    useEffect(() => {
+        if(playerState) {
+            setLastPlayerState(playerState);
+        }
+    },[playerState])
 
     useEffect(() => {
         if(modalVisible) {
@@ -42,37 +53,41 @@ export const NowPlayingBar = () => {
         return value && value > 0 ? (value+'s') : '-'
     }
 
-    if(playerState) {
-        return (
-            <>
-                <TouchableOpacity style={styles.container} onPress={() => setModalVisible(!modalVisible)}>
-                    <Icon name={'keyboard-arrow-up'}/>
-                    <View style={styles.trackContainer}>
-                        <Text>{playerState.track.artist.name} - {playerState.track.name}</Text>
-                        <Text>{getValidTimeLeft(secondsLeft)}</Text>
-                    </View>
-                    <TouchableOpacity style={styles.controlIcon} onPress={() => togglePlayPause()}>
-                        <Icon raised name={(isAutoPausing || !playerState.isPaused) ? 'pause' : 'play-arrow'}/>
-                    </TouchableOpacity>
-                    <PauseProgressBar
-                        height={3}
-                        fillColor={'#ffffff'}
-                        trackColor={'rgba(0,0,0,0.2)'}
-                        style={styles.pauseBar}
-                    />
-                </TouchableOpacity>
-                <FullScreen 
-                    playerState={playerState}
-                    visible={modalVisible}
-                    onRequestClose={() => {
-                        setModalVisible(!modalVisible);
-                    }}
-                />
-            </>
-        )
+    // Fall back to the last known state so the bar and fullscreen stay put
+    // through a transient Spotify drop instead of vanishing.
+    const displayState = playerState ?? lastPlayerState;
+
+    if(!displayState) {
+        return null;
     }
 
-    return null;
+    return (
+        <>
+            <TouchableOpacity style={styles.container} onPress={() => setModalVisible(!modalVisible)}>
+                <Icon name={'keyboard-arrow-up'}/>
+                <View style={styles.trackContainer}>
+                    <Text>{displayState.track.artist.name} - {displayState.track.name}</Text>
+                    <Text>{getValidTimeLeft(secondsLeft)}</Text>
+                </View>
+                <TouchableOpacity style={styles.controlIcon} onPress={() => togglePlayPause()}>
+                    <Icon raised name={(isAutoPausing || !displayState.isPaused) ? 'pause' : 'play-arrow'}/>
+                </TouchableOpacity>
+                <PauseProgressBar
+                    height={3}
+                    fillColor={'#ffffff'}
+                    trackColor={'rgba(0,0,0,0.2)'}
+                    style={styles.pauseBar}
+                />
+            </TouchableOpacity>
+            <FullScreen
+                playerState={displayState}
+                visible={modalVisible}
+                onRequestClose={() => {
+                    setModalVisible(false);
+                }}
+            />
+        </>
+    )
 }
 
 const useStyles = makeStyles((theme) => ({

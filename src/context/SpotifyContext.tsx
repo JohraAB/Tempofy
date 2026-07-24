@@ -404,8 +404,27 @@ export const AppContextProvider = (props: Props) => {
             }
         },
         pause: async () => {
-            await ensureRemoteConnected();
-            await Player.pause();
+            try {
+                await ensureRemoteConnected();
+                await Player.pause();
+            } catch (err: any) {
+                // Pause is idempotent: its goal is "not playing". The App Remote
+                // rejects Player.pause() with "The request failed." when there's
+                // nothing to pause (the mirror of resume rejecting when nothing
+                // is paused), and a suspended/disconnected Spotify (a long
+                // autoSkipTime window can outlast the connection, like the rest
+                // gap does) also isn't playing. Both already satisfy the intent,
+                // so resolve instead of surfacing an error. We deliberately do
+                // NOT wake via authorizeAndPlay here — that would START playback,
+                // the opposite of pausing. A genuine still-playing failure would
+                // have to reach us as some other signature; treat these two as
+                // the no-op they are.
+                const msg = String(err?.message ?? "").toLowerCase();
+                if (isConnectionError(err) || msg.includes("the request failed")) {
+                    return;
+                }
+                throw err;
+            }
         },
         resume: async () => {
             try {

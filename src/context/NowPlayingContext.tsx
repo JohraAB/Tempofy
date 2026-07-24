@@ -32,6 +32,11 @@ interface NowPlayingContext {
     // auto-resume. The now-playing button reads this to show as playing so the
     // user can keep it paused for real.
     isAutoPausing: boolean;
+    // Wall-clock time (ms) the current rest gap is scheduled to end, or null when
+    // not pausing. The pause progress bar reads this so it can show the true
+    // remaining fraction even when mounted partway through the gap (e.g. opening
+    // fullscreen mid-pause), instead of restarting from full.
+    pauseEndsAt: number | null;
     // Cancel the scheduled auto-resume and keep playback in its current state.
     cancelAutoResume: () => void;
 }
@@ -42,6 +47,7 @@ const defaultValue: NowPlayingContext = {
     userSelectedTrack: () => undefined,
     timeLeft: null,
     isAutoPausing: false,
+    pauseEndsAt: null,
     cancelAutoResume: () => undefined
 }
 
@@ -93,6 +99,9 @@ export const NowPlayingContextProvider = (props: Props) => {
     // effect read it without a stale closure.
     const [isAutoPausing, setIsAutoPausing] = useState(false);
     const isAutoPausingRef = useRef(false);
+    // When the current rest gap ends (Date.now() + pauseTime), exposed so the
+    // pause progress bar can render the true remaining fraction; null off-gap.
+    const [pauseEndsAt, setPauseEndsAt] = useState<number | null>(null);
     // Set when the instructor takes control during the gap (a play press on a
     // remote, or a tap on the button) — the gap ends and the scheduled resume
     // is skipped so playback stays paused.
@@ -247,6 +256,7 @@ export const NowPlayingContextProvider = (props: Props) => {
         autoResumeCancelledRef.current = false;
         isAutoPausingRef.current = true;
         setIsAutoPausing(true);
+        setPauseEndsAt(Date.now() + pauseTime);
         await new Promise<void>(resolve => {
             pauseHoldResolveRef.current = resolve;
             pauseHoldTimerRef.current = setTimeout(resolve, pauseTime);
@@ -258,6 +268,7 @@ export const NowPlayingContextProvider = (props: Props) => {
         pauseHoldResolveRef.current = null;
         isAutoPausingRef.current = false;
         setIsAutoPausing(false);
+        setPauseEndsAt(null);
     };
 
     // Instructor took control during the rest gap. Block any play that slipped
@@ -281,6 +292,34 @@ export const NowPlayingContextProvider = (props: Props) => {
         isPausedRef.current = true;
         if(slippedIntoPlaying) {
             remote.pause().catch(err => console.error('cancelAutoResume pause failed', err));
+        }
+    };
+
+    // Cancel a countdown or rest gap still pending from the track we're leaving.
+    // A user-initiated play (track pick, shuffle, previous) starts fresh, so a
+    // leftover countdown must not fire mid-switch and pause or skip the track we
+    // just started — the "plays ~1s then stops" after re-shuffling while another
+    // track (with a live countdown) is still playing. Stops the timer and
+    // releases any in-progress rest gap without resuming. We must NOT setTimeLeft
+    // (null would trip onCountDownFinished); the caller's resetCountDown arms a
+    // fresh positive countdown right after.
+    const cancelPendingAutoAdvance = () => {
+        endTimeRef.current = null;
+        pausedRemainingRef.current = null;
+        setUpdateInterval(null);
+        if(isAutoPausingRef.current || pauseHoldResolveRef.current) {
+            autoResumeCancelledRef.current = true;
+            isAutoPausingRef.current = false;
+            setIsAutoPausing(false);
+            setPauseEndsAt(null);
+            if(pauseHoldTimerRef.current) {
+                clearTimeout(pauseHoldTimerRef.current);
+                pauseHoldTimerRef.current = null;
+            }
+            if(pauseHoldResolveRef.current) {
+                pauseHoldResolveRef.current();
+                pauseHoldResolveRef.current = null;
+            }
         }
     };
 
@@ -345,6 +384,11 @@ export const NowPlayingContextProvider = (props: Props) => {
         setUpdateInterval(null);
         if(autoSkipMode == AutoSkipMode.Off) {
             // No auto-advance — let the track (outro included) play to its end.
+            // Re-arm the counter so it keeps cycling as a plain interval timer
+            // instead of stopping at zero after the first countdown. No cap here:
+            // we never skip in Off mode, so the counter runs a full autoSkipTime
+            // every cycle rather than shortening toward the outro.
+            resetCountDown();
             return;
         }
         if(countdownCappedRef.current) {
@@ -373,6 +417,9 @@ export const NowPlayingContextProvider = (props: Props) => {
 
     const playTrack = async (item: TrackObject) => {
         console.log('playTrack',item.name);
+        // Kill any countdown/rest gap left over from the track we're leaving so
+        // it can't fire during the switch and pause or skip this fresh track.
+        cancelPendingAutoAdvance();
         isTransitioningRef.current = true;
         transitionStartRef.current = Date.now();
         targetUriRef.current = item.uri;
@@ -431,6 +478,26 @@ export const NowPlayingContextProvider = (props: Props) => {
         setWaiting(true);
 
         try {
+            // Auto-skip (pauseBeforeStart) holds a silent rest gap (pauseTime)
+            // before the next track so the instructor can talk and keep control;
+            // a manual skip starts immediately. Pause the CURRENT track and hold
+            // the gap BEFORE cueing the next track: playUri always starts playback
+            // from 0 (the SDK has no cue/play-from-offset and no volume control),
+            // so starting the next track first and only then pausing leaks its
+            // first moments as an audible blip at the very start of what should be
+            // a silent gap. Cueing the next track only once the gap is over folds
+            // its unavoidable 0→intro start-up into the music resuming, so there's
+            // no "next-track sound, then silence".
+            if(pauseBeforeStart) {
+                try {
+                    await remote.pause();
+                } catch (err) {
+                    // A failed pause must not abort the whole skip — fall through
+                    // to the gap and cue the next track anyway.
+                    console.error('skip pre-pause failed', err);
+                }
+                await holdPauseGap();
+            }
             setCurrentTrack(undefined);
             // The SDK can only play a track from 0 (no play-from-offset), so
             // play → seek would briefly play the intro before jumping. Instead,
@@ -444,12 +511,6 @@ export const NowPlayingContextProvider = (props: Props) => {
             await new Promise(resolve => setTimeout(resolve, 50));
             await remote.seek(introSkipTime);
             setCurrentTrack(nextItem);
-            // Auto-skip holds the rest gap (pauseTime) before the next track
-            // starts, so the instructor can talk and keep control; a manual skip
-            // starts immediately.
-            if(pauseBeforeStart) {
-                await holdPauseGap();
-            }
             // Start the next part only if the instructor didn't take control
             // during the gap and playback is still paused. If they pressed play
             // (cancelAutoResume re-paused it) the next track stays cued, paused,
@@ -481,6 +542,9 @@ export const NowPlayingContextProvider = (props: Props) => {
         if(!prevItem) {
             return;
         }
+        // Kill any leftover countdown/rest gap so it can't pause or skip the
+        // track we're about to start (see cancelPendingAutoAdvance).
+        cancelPendingAutoAdvance();
         isTransitioningRef.current = true;
         transitionStartRef.current = Date.now();
         targetUriRef.current = prevItem.uri;
@@ -551,6 +615,7 @@ export const NowPlayingContextProvider = (props: Props) => {
                 userSelectedTrack,
                 timeLeft,
                 isAutoPausing,
+                pauseEndsAt,
                 cancelAutoResume
             }}
         >

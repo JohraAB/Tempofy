@@ -18,16 +18,22 @@ export const PauseProgressBar: React.FC<{
     trackColor = 'rgba(255,255,255,0.15)',
     style,
 }) => {
-    const { isAutoPausing } = useContext(NowPlayingContext);
+    const { isAutoPausing, pauseEndsAt } = useContext(NowPlayingContext);
     const { pauseTime } = useContext(SettingsContext);
     const progress = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        if(isAutoPausing) {
-            progress.setValue(1);
+        if(isAutoPausing && pauseEndsAt) {
+            // Start from how much of the gap actually remains, not always full:
+            // a bar mounted partway through the gap (e.g. opening fullscreen
+            // mid-pause) must pick up where the gap is, then drain over just the
+            // time left rather than restarting a fresh pauseTime.
+            const remaining = Math.max(0, pauseEndsAt - Date.now());
+            const startFraction = pauseTime > 0 ? remaining / pauseTime : 0;
+            progress.setValue(startFraction);
             const animation = Animated.timing(progress, {
                 toValue: 0,
-                duration: pauseTime,
+                duration: remaining,
                 // Width can't animate on the native driver; the gap is short and
                 // occasional, so a JS-driven bar is fine and doesn't re-render
                 // any context consumers.
@@ -37,7 +43,7 @@ export const PauseProgressBar: React.FC<{
             return () => animation.stop();
         }
         progress.setValue(0);
-    }, [isAutoPausing, pauseTime]);
+    }, [isAutoPausing, pauseEndsAt, pauseTime]);
 
     if(!isAutoPausing) {
         return null;
