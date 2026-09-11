@@ -2,7 +2,13 @@ import SpotifyWebApi from "spotify-web-api-node";
 import { TrackObject } from "./types";
 
 export const getUserPlaylists = async (api: any) => {
-    let requests = await createAllRequests(api, 'getUserPlaylists', undefined, {}, 'items(uri,id,name,images)');
+    let requests = await createAllRequests(
+        api,
+        'getUserPlaylists',
+        undefined,
+        {},
+        'items(uri,id,name,description,images,owner(id,display_name),tracks(total),collaborative,public)'
+    );
     const responses: any = await Promise.all(requests);
     const itemMap = new Map<string, any>();
     for (const response of responses) {
@@ -45,22 +51,27 @@ export const getPlaylistTracks = async (api: SpotifyWebApi, allTempos: any, id: 
 }
 
 const createAllRequests = async (api: any, request: string, args: any, input: any, fields?: string, onRequestComplete?: any) => {
-    const response: any = await api[request](args, {
+    const initialOptions = {
         fields: 'total,limit'
-    });
+    };
+    const response: any = args === undefined
+        ? await api[request](initialOptions)
+        : await api[request](args, initialOptions);
     var requests = [];
     const numRequests = Math.ceil(response.body.total/response.body.limit);
     
     var count = 0;
     do {
-        requests.push(
-            api[request](args, {
+        const options = {
                 offset: count*parseInt(response.body.limit),
                 limit: response.body.limit,
                 fields: fields,
                 ...input
-            }).then(onRequestComplete)
-        )
+            };
+        const pagedRequest = args === undefined
+            ? api[request](options)
+            : api[request](args, options);
+        requests.push(pagedRequest.then(onRequestComplete))
         count++
     } while (count < numRequests)
     return requests;

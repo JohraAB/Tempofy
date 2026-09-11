@@ -1,14 +1,21 @@
 import React from "react";
-import { ListItem, Avatar } from '@rneui/themed'
+import { ListItem, Avatar, Icon } from '@rneui/themed'
 
-export const PlaylistListItem: React.FC<{ onPress?: (item: SpotifyApi.PlaylistObjectSimplified) => void, onLongPress?: (item: SpotifyApi.PlaylistObjectSimplified) => void, item: SpotifyApi.PlaylistObjectSimplified }> = ({
+export const PlaylistListItem: React.FC<{
+    onPress?: (item: SpotifyApi.PlaylistObjectSimplified) => void,
+    onLongPress?: (item: SpotifyApi.PlaylistObjectSimplified) => void,
+    onTogglePin?: (item: SpotifyApi.PlaylistObjectSimplified) => void,
+    isPinned?: boolean,
+    item: SpotifyApi.PlaylistObjectSimplified
+}> = ({
     item,
     onPress,
-    onLongPress
+    onLongPress,
+    onTogglePin,
+    isPinned = false,
   }) => {
     const {
         name,
-        description,
         images
     } = item;
     const previewImage = images && images.length > 0 ? images[images.length-1] : null;
@@ -25,8 +32,18 @@ export const PlaylistListItem: React.FC<{ onPress?: (item: SpotifyApi.PlaylistOb
             }
             <ListItem.Content>
                 <ListItem.Title>{name}</ListItem.Title>
-                <ListItem.Subtitle>{description}</ListItem.Subtitle>
+                <ListItem.Subtitle numberOfLines={1}>
+                    {item.owner?.display_name ? `${item.owner.display_name} · ` : ''}
+                    {item.tracks?.total ?? 0} tracks
+                    {item.collaborative ? ' · Collaborative' : ''}
+                </ListItem.Subtitle>
             </ListItem.Content>
+            {onTogglePin && <Icon
+                name={isPinned ? 'star' : 'star-outline'}
+                type="material"
+                color={isPinned ? '#f5c542' : undefined}
+                onPress={() => onTogglePin(item)}
+            />}
             <ListItem.Chevron />
         </ListItem>
     )
